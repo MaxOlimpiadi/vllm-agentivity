@@ -81,20 +81,19 @@ aux_prompt_data_file = 'auxiliary_prompt_data.json'
 
 
 
-# для промптов о списке участников во фразе:
+# for prompts regarding the list of participants in the phrase:
 class CharListResponse(BaseModel):
     participants: List[str] = Field(default_factory=list)
     
 
-# для промптов о лейбле персонажа во фразе:
+# for prompts regarding the character label in the phrase:
 class AgentiveClass(Enum):
      AGENTIVE = "agentive"
      LOW_AGENTIVE = "low_agentive"
      PASSIVE = "passive"
      
-# тоже для второго
+# also for the second:
 class AgentiveResponse(BaseModel):
-     #explanation: str
      prediction: AgentiveClass
      class Config:
          use_enum_values = True
@@ -131,15 +130,15 @@ def intersect_spans(span1, span2):
     a, b = span1
     c, d = span2
 
-    # Находим максимум из начальных точек и минимум из конечных
+    # find the maximum of the starting points and the minimum of the ending points.
     start = max(a, c)
     end = min(b, d)
 
-    # Если отрезки пересекаются, возвращаем их пересечение
+    # If the segments intersect, return their intersection.
     if start <= end:
         return [start, end]
     else:
-        # Нет пересечения, возвращаем None или пустой список, как тебе удобней
+        # If there is no intersection, return an empty list
         return []
     
     
@@ -157,16 +156,16 @@ def text_by_spans(spans, full_annotations):
 
 
 
-#-- text - цельный текстовый кусок
-#-- spans_of_marking - список числовых пар [a, b] где надо звёзды поставить
+#-- text - a continuous block of text
+#-- spans_of_marking - a list of number pairs [a, b] where stars need to be placed
 def mark_text_with_asterisks(text, spans_of_marking):
     old_text = text
-    # сортируем интервалы по убыванию, чтобы не сбивать индексы - это главный лайфхак
+    # sort the intervals in descending order so as not to mess up the indices—that’s the key trick:
     spans_of_marking = sorted(spans_of_marking, reverse=True)
     for start, end in spans_of_marking:
-        # вставляем закрывающие звёздочки после end (end включительно, поэтому +1)
+        # insert the closing asterisks after `end` (inclusive of `end`, hence +1):
         text = text[:end] + '**' + text[end:]
-        # вставляем открывающие звёздочки перед start
+        # insert opening asterisks before "start"
         text = text[:start] + '**' + text[start:]
     return text
     
@@ -174,14 +173,14 @@ def mark_text_with_asterisks(text, spans_of_marking):
 
 
 
-#!! полагаем, что спаны из spans могут цеплять несколько предложений
+#!! we assume that the spans from `spans` can capture multiple sentences
 #--getting sentences for given spans
 def get_sentences_overlapping_spans(full_annotations, spans, min_overlap = 0):
-    # Найдём минимальный старт и максимальный конец всех spans
+    # find the minimum start and maximum end of all spans:
     min_part_start = min(span[0] for span in spans)
     max_part_end = max(span[1] for span in spans)
     
-    # Проверка на пересечение
+    # Intersection check:
     sentence_list = []
     #intersected = False
     for sentence in full_annotations["sentences"]:
@@ -189,21 +188,21 @@ def get_sentences_overlapping_spans(full_annotations, spans, min_overlap = 0):
         start_of_sentence = sentence[0]
         end_of_sentence = sentence[1]
 
-        # Если начало предложения стоит после конца самого правого спана — прерываем цикл
+        # If the start of the sentence comes after the end of the rightmost span, then terminate the loop:
         if start_of_sentence > max_part_end:
-            break  # упорядочены — дальше пересечений не будет
+            break  # ordered — there will be no further intersections
 
-        # Если конец предложения стоит до начала самого левого спана - сразу идём дальше 
+        # If the end of the sentence comes before the start of the leftmost span, we immediately move on:
         if end_of_sentence < min_part_start:
             continue
 
-        #for a, b in mention_spans: #a, b - пара числе (т.е. спан). И так для каждого спана из mention_spans
+        #for a, b in mention_spans: #a, b - пара числе (т.е. спан). And so for each span from mention_spans
         for c, d in spans:
             overlap_start = max(start_of_sentence, c)
             overlap_end = min(end_of_sentence, d)
-            if overlap_end - overlap_start >= min_overlap: #значит пересеклись - возвращаем тру и предложение
+            if overlap_end - overlap_start >= min_overlap: # then they intersected - return true and the sentencs
                 #sentence_list.append(full_annotations["text"][start_of_sentence:end_of_sentence])
-                sentence_list.append([start_of_sentence, end_of_sentence]) #возвращаем спаны предложений, а не сами предложения
+                sentence_list.append([start_of_sentence, end_of_sentence]) # return sentence spans, not the sentences themselves
                 break # current sentence has been already added, we have to go to the next one
                 #return 1, full_annotations["text"][start_of_sentence:end_of_sentence] 
     return sentence_list
@@ -217,115 +216,35 @@ def get_mention_spans(participation_spans, full_annotations, author, pers, min_o
     
     result_spans = []
         
-    # Найдём минимальный старт и максимальный конец всех participation spans
+    # find the minimum start and maximum end of all participation spans
     min_part_start = min(span[0] for span in participation_spans)
     max_part_end = max(span[1] for span in participation_spans) 
 
     for mention in full_annotations[author]["mentions"].get(pers, []):
         mention_spans = mention["spans"]
 
-        # Если все mention_spans начинаются после конца participation_spans — прерываем цикл
+        # If all the mention_spans begin after the end of participation_spans — break the loop:
         if all(start > max_part_end for (start, _) in mention_spans):
-            break  # упорядочены — дальше пересечений не будет
+            break  # ordered — there will be no further intersections
 
-        # Если все mention_spans заканчиваются до начала participation — пропускаем
+        # If all `mention_spans` end before the start of the `participation`, then we skip it:
         if all(end < min_part_start for (_, end) in mention_spans):
             continue
 
-        for a, b in mention_spans: #a, b - пара чисел (т.е. спан). И так для каждого спана из mention_spans
+        for a, b in mention_spans: #a, b - pair of numbers (a span). And so on for every span from mention_spans
             for c, d in participation_spans:
                 if b < c:
-                    break  # так как упорядочены, дальше смысла проверять нет
+                    break  # since they are ordered, there is no point in checking further
                 overlap_start = max(a, c)
                 overlap_end = min(b, d)
-                if overlap_end - overlap_start >= min_overlap: #значит пересеклись
-                    #result_spans.append([a, b]) - было так. Типа возвращали мэншэн целиком.
-                    result_spans.append([overlap_start, overlap_end]) # возвращаем именно само пересечение, а не целиком мэншэн
-                    break #чтобы избежать многократного добавления одного и того жe спана [a, b]
+                if overlap_end - overlap_start >= min_overlap: # then the intersected
+                    result_spans.append([overlap_start, overlap_end]) # return specifically the intersection itself, not the entire mention
+                    break # to avoid repeatedly adding the same span [a, b]
                     
     return result_spans #if there is no intersection - returning an empty list.
     
 
 
-
-# #collecting contexts and chars for further prompts preparation
-# #--- N - number of prompts (process firsn N participation objects from our JSON)
-# #--- every object from contexts_and_chars contains both context (of the spans) and chars, 
-# #--- assosiated with particular participation object.
-# #--- returning prepared data for N prompts 
-# def prepare_prompt_data(full_annotations, N, author):
-#     participations = full_annotations[author]["participations"][0:N]
-#     contexts_and_chars = []
-#     count_prompts = 0
-    
-#     for elem in participations:
-#         tmp_spans = elem["spans"] #all the spans of current participations
-#         tmp_chars = []            #all chars of current participation
-        
-#         #getting chars of current participation object:
-#         for category in ["agentive", "low_agentive", "passive"]:
-#             if elem[category]:
-#                 for char in elem[category]:
-#                     tmp_chars.append((char, category)) #категория здесь как "правильный лейбл". Потом для подсчёта точности пригодится
-#                     #tmp_chars.extend(elem[category]) # добавит сразу всех участников данного типа, если они есть. Extend - чтобы всегда был список строк, и не было вложенной шляпы типа [['Jeronimo']]
-        
-   
-#         for char, category in tmp_chars:              
-#             #TODO: предусмотреть, что результат может быть пустым списком: 
-#             #getting mention spans of current char in the current participation spans
-#             char_mention_spans = get_mention_spans(tmp_spans, full_annotations, author, char) 
-                    
-#             #TODO: вынести в функцию отдельную
-#             #new wrapping of phrase:
-#             processed_phrase = [] # будет СПИСОК кусков уже полностью готовой фразы, который я объединю сепаратором "..."
-#             for p_span in tmp_spans: # последовательно обрабатываем каждый кусок phrase
-#                 marking_spans = []  #спаны, которые надо выделить звёздами в текущем куске фразы
-#                 p_start, p_end = p_span # спан куска фразы
-#                 for m_span in char_mention_spans: # сравниваем кусок фразы со всеми кусками мэншенов
-#                     overlap_span = intersect_spans(p_span, m_span)
-#                     if (overlap_span):
-#                         overlap_span = [v - p_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-#                         marking_spans.append(overlap_span)
-#                 #наконец передаём кусок фразы (в текстовом виде) и пронормированные спаны для звёзд в функцию:
-#                 part = mark_text_with_asterisks(full_annotations["text"][p_start:p_end], marking_spans)
-#                 processed_phrase.append(part)
-#             processed_phrase = ' ... '.join(processed_phrase)
-#             processed_phrase = processed_phrase.replace('\r', '').replace('\n', ' ')    
-                
-            
-#             #new wrapping of context:
-#             context_spans = get_sentences_overlapping_spans(full_annotations, tmp_spans)
-#             processed_context = []
-#             for c_span in context_spans:
-#                 marking_spans = []
-#                 c_start, c_end = c_span
-#                 for m_span in char_mention_spans: 
-#                     overlap_span = intersect_spans(c_span, m_span)
-#                     if (overlap_span):
-#                         overlap_span = [v - c_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-#                         marking_spans.append(overlap_span) 
-#                 #наконец передаём кусок контекста (предложение в текстовом виде) и пронормированные спаны для звёзд в функцию:
-#                 part = mark_text_with_asterisks(full_annotations["text"][c_start:c_end], marking_spans)
-#                 processed_context.append(part)                                                 
-#             processed_context = ' ... '.join(processed_context)
-#             processed_context = processed_context.replace('\r', '').replace('\n', ' ')     
-            
-                
-#             #adding data for a prompt:
-#             contexts_and_chars.append({"char": char, "context": processed_context, "phrase": processed_phrase, "golden_label": category})
-#             count_prompts += 1
-                   
-#     #downloading in the file:
-#     with open("context_and_chars.json", "w", encoding="utf-8") as f:
-#         json.dump(contexts_and_chars, f, ensure_ascii=False, indent=2)    
-#     print(count_prompts)
-    
-#     return contexts_and_chars
-
-
-
-
-# a new version of the function
 def prepare_prompt_data():
     
     json_files = [f for f in os.listdir(folder_data_path) if f.endswith('.json')]
@@ -340,12 +259,12 @@ def prepare_prompt_data():
         text = full_annotations['text']
         title = full_annotations['title']
         
-        valid_iter = (  # уважаемый итератор. Он не создаёт список, а работает как поток, возвращая элемы по мере запроса.
+        valid_iter = (  # iterator
             p for p in full_annotations[author]['participations'] 
             if is_valid_participation(p, full_annotations, author) 
         )
         
-        selected_phrases = list(itertools.islice(valid_iter, N)) # берёт N элементов из потока итератора (то есть его срез - slice)
+        selected_phrases = list(itertools.islice(valid_iter, N)) # takes N elements from the iterator stream (i.e., a slice of it)
     
         print(
             f'{full_annotations["title"]}: '
@@ -356,10 +275,10 @@ def prepare_prompt_data():
         cur_data_instances = 0
         
         for idx, elem in enumerate(selected_phrases, cur_data_instances):
-            phrase_spans = sorted(set(tuple(span) for span in elem['spans'])) # из-за приколов с хэшируемыми объектами. Лист - не хешируемый, а тупл - да. Поэтому привели к виду тупл.
+            phrase_spans = sorted(set(tuple(span) for span in elem['spans'])) # due to issues with hashable objects. A list isn't hashable, but a tuple is. That’s why it was converted to a tuple.
             phrase_spans = [
                 list(span) 
-                for span in phrase_spans # обратно в список преобразуем
+                for span in phrase_spans # convert it back into a list.
             ] 
             phrase_text = [ text[start:end] for start, end in phrase_spans ]
             phrase_text = ' ... '.join(phrase_text)
@@ -395,7 +314,7 @@ def prepare_prompt_data():
             
             # A dictionary <label>: <chars> to evaluate the second prompt    
             golden_labels_with_chars = {
-                category: list(elem[category]) # list(..) надо чтобы shallow copy была, т.е. новый объект создался, а не просто ссылка на тот же объект подставилась!
+                category: list(elem[category]) # list(..) We need a shallow copy—meaning a new object should be created, rather than just substituting a reference to the same object!
                 for category in category_list
             }
             
@@ -408,7 +327,7 @@ def prepare_prompt_data():
                     "context_spans": context_with_phrase_spans,
                     "context_text": ' '.join(context_with_phrase_text),
                     "all_text_chars": full_char_list,
-                    "golden_chars": sorted(set_of_golden_chars), # важно! Изначально там set лежит, а его нельзя сюреализовать, поэтому ошибка была. А sorted - выдаёт уже LIST, да ещё и сортированный.
+                    "golden_chars": sorted(set_of_golden_chars), # Important! It starts out as a `set`, which can't be serialized—hence the error. But `sorted()` returns a `list`—and a sorted one at that.
                     "golden_labels_with_chars": golden_labels_with_chars
                     
                 }
@@ -423,81 +342,6 @@ def prepare_prompt_data():
         json.dump(prompt_data, f, ensure_ascii=False, indent=4)
     
     return prompt_data
-
-        
-        
-    
-    
-    
-    
- # =====================================ЧАСТЬ СТАРОЙ ВЕРСИИ ФУНКЦИИ:===========================   
-    # contexts_and_chars = []
-    # count_prompts = 0
-    
-    # for elem in participations:
-    #     tmp_spans = elem["spans"] #all the spans of current participations
-    #     tmp_chars = []            #all chars of current participation
-        
-    #     #getting chars of current participation object:
-    #     for category in ["agentive", "low_agentive", "passive"]:
-    #         if elem[category]:
-    #             for char in elem[category]:
-    #                 tmp_chars.append((char, category)) #категория здесь как "правильный лейбл". Потом для подсчёта точности пригодится
-    #                 #tmp_chars.extend(elem[category]) # добавит сразу всех участников данного типа, если они есть. Extend - чтобы всегда был список строк, и не было вложенной шляпы типа [['Jeronimo']]
-        
-   
-    #     for char, category in tmp_chars:              
-    #         #TODO: предусмотреть, что результат может быть пустым списком: 
-    #         #getting mention spans of current char in the current participation spans
-    #         char_mention_spans = get_mention_spans(tmp_spans, full_annotations, author, char) 
-                    
-    #         #TODO: вынести в функцию отдельную
-    #         #new wrapping of phrase:
-    #         processed_phrase = [] # будет СПИСОК кусков уже полностью готовой фразы, который я объединю сепаратором "..."
-    #         for p_span in tmp_spans: # последовательно обрабатываем каждый кусок phrase
-    #             marking_spans = []  #спаны, которые надо выделить звёздами в текущем куске фразы
-    #             p_start, p_end = p_span # спан куска фразы
-    #             for m_span in char_mention_spans: # сравниваем кусок фразы со всеми кусками мэншенов
-    #                 overlap_span = intersect_spans(p_span, m_span)
-    #                 if (overlap_span):
-    #                     overlap_span = [v - p_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-    #                     marking_spans.append(overlap_span)
-    #             #наконец передаём кусок фразы (в текстовом виде) и пронормированные спаны для звёзд в функцию:
-    #             part = mark_text_with_asterisks(full_annotations["text"][p_start:p_end], marking_spans)
-    #             processed_phrase.append(part)
-    #         processed_phrase = ' ... '.join(processed_phrase)
-    #         processed_phrase = processed_phrase.replace('\r', '').replace('\n', ' ')    
-                
-            
-    #         #new wrapping of context:
-    #         context_spans = get_sentences_overlapping_spans(full_annotations, tmp_spans)
-    #         processed_context = []
-    #         for c_span in context_spans:
-    #             marking_spans = []
-    #             c_start, c_end = c_span
-    #             for m_span in char_mention_spans: 
-    #                 overlap_span = intersect_spans(c_span, m_span)
-    #                 if (overlap_span):
-    #                     overlap_span = [v - c_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-    #                     marking_spans.append(overlap_span) 
-    #             #наконец передаём кусок контекста (предложение в текстовом виде) и пронормированные спаны для звёзд в функцию:
-    #             part = mark_text_with_asterisks(full_annotations["text"][c_start:c_end], marking_spans)
-    #             processed_context.append(part)                                                 
-    #         processed_context = ' ... '.join(processed_context)
-    #         processed_context = processed_context.replace('\r', '').replace('\n', ' ')     
-            
-                
-    #         #adding data for a prompt:
-    #         contexts_and_chars.append({"char": char, "context": processed_context, "phrase": processed_phrase, "golden_label": category})
-    #         count_prompts += 1
-                   
-    # #downloading in the file:
-    # with open("context_and_chars.json", "w", encoding="utf-8") as f:
-    #     json.dump(contexts_and_chars, f, ensure_ascii=False, indent=2)    
-    # print(count_prompts)
-    
-    # return contexts_and_chars
-
 
 
 
@@ -590,7 +434,7 @@ If none participate:
         {
             "role": "user",
             "content":
-                template_messages[1]["content"].format( # для обычного промпта без прикреплённого пдф
+                template_messages[1]["content"].format( # for a standard prompt without an attached PDF
                 complete_char_list = instance["all_text_chars"],
                 context_text = instance["context_text"],
                 phrase_text = instance["phrase_text"]
@@ -615,14 +459,6 @@ If none participate:
     cleaned_response = None
     while attempt < MAX_RETRIES:
         try:     
-            #sending the prompt to the model:  
-            # response = client.beta.chat.completions.parse(
-            #     #model="gpt-5-mini", # TODO: check the name of the model
-            #     model = "gpt-5.2",
-            #     messages = complete_msg,
-            #     response_format = CharListResponse
-            # )
-
             response = llm.chat(
                 [complete_msg],
                 sampling_params
@@ -666,7 +502,7 @@ If none participate:
         return False, []
     
     
-    #--------------------Логированипе в pretty и в machine форматах------------
+    #--------------------Logging in pretty and machine formats ------------
     log_entry = {
         'idx': instance['idx'],
         'doc_title': instance['doc_title'],
@@ -680,12 +516,12 @@ If none participate:
         'predicted_char_list': cleaned_response["participants"],    
     }
     
-    json.dump(log_entry, pretty_log_file, ensure_ascii = False, indent = 4) # Логированипе в красивый json файл для ручного просмотра:
+    json.dump(log_entry, pretty_log_file, ensure_ascii = False, indent = 4) # Logging into pretty json file for manual review
     
-    json.dump(log_entry, machine_log_file, ensure_ascii = False)  # Логированипе в jsonlines файл для дальнейшего автоматического разбора 
-    machine_log_file.write("\n") # обязательно добавлять \n чтобы соблюсти правила jsonlines!
+    json.dump(log_entry, machine_log_file, ensure_ascii = False)  # Logging into jsonlines file for further automated parsing
+    machine_log_file.write("\n") # it`s important to add \n to comply with the jsonlines format!
     
-    #----------------------Логирование в текстовый файл более подробно:-------------------
+    #----------------------Detailed logging to a text file:-------------------
     text_log_file.write("=" * 80 + "\n")
     text_log_file.write(f"[ID]     {instance['idx']}\n")
     text_log_file.write(f"[PHRASE SPANS]        {instance['phrase_spans']}\n")
@@ -701,8 +537,6 @@ If none participate:
     text_log_file.write(complete_msg[1]['content'] + "\n")
     text_log_file.write("-" * 80 + "\n\n")
     
-    #text_log_file.write("[EXPLANATION]\n")
-    #text_log_file.write(cleaned_response["explanation"] + "\n")
     text_log_file.write("=" * 80 + "\n\n")
     
     return True, log_entry
@@ -836,16 +670,16 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
     for char in instance["predicted_char_list"]:
         #marking the character mention in the PHRASE with asterisks:
         char_mention_spans = get_mention_spans(phrase_spans, doc_annotations, author, char) #get char mention spans overlapping the phrase 
-        processed_phrase = []                   # будет СПИСОК кусков уже полностью готовой фразы, который я объединю сепаратором "..."
-        for p_span in phrase_spans:             # последовательно обрабатываем каждый кусок phrase
-            marking_spans = []                  # спаны, которые надо выделить звёздами в текущем куске фразы
-            p_start, p_end = p_span             # спан куска фразы
-            for m_span in char_mention_spans:   # сравниваем кусок фразы со всеми кусками мэншенов
+        processed_phrase = []                   # there will be a list of segments of the fully formed phrase, which I will join using the separator "..."
+        for p_span in phrase_spans:             # process each piece of the phrase sequentially 
+            marking_spans = []                  # spans that need to be marked with asterisks in the current segment of the phrase
+            p_start, p_end = p_span             # span of a phrase fragment
+            for m_span in char_mention_spans:   # compare a fragment of the phrase with all fragments of the mentions
                 overlap_span = intersect_spans(p_span, m_span)
                 if (overlap_span):
-                    overlap_span = [v - p_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-                    marking_spans.append(overlap_span) #уже нормализованные спаны которые надо заключить в **
-            #наконец передаём кусок фразы (в текстовом виде) и пронормированные спаны для звёзд в функцию:
+                    overlap_span = [v - p_start for v in overlap_span] # normalize the interval: we assume, that zero - is the begening of the phrase segment
+                    marking_spans.append(overlap_span) # already normalized spans that need to be enclosed in **
+            #finally, we pass the phrase segment (in text form) and the normalized spans for the asterisks to the function:
             part = mark_text_with_asterisks(doc_annotations["text"][p_start:p_end], marking_spans)
             processed_phrase.append(part)
         processed_phrase = ' ... '.join(processed_phrase)
@@ -853,16 +687,16 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
         
         
         #marking the character mention in the CONTEXT with asterisks:
-        processed_context = []                   # будет СПИСОК кусков уже полностью готовой фразы, который я объединю сепаратором "..."
-        for sentence_span in context_spans:             # последовательно обрабатываем каждое предложение контекста
-            marking_spans = []                  # спаны, которые надо выделить звёздами в текущем куске контекста
-            s_start, s_end = sentence_span             # спан куска контекста (т.е. спан предложения)
-            for m_span in char_mention_spans:   # сравниваем кусок фразы со всеми кусками мэншенов
+        processed_context = []                   # there will be a list of segments of the fully formed phrase, which I will join using the separator "..."
+        for sentence_span in context_spans:             # process each sentence of the context sequentially 
+            marking_spans = []                  # spans that need to be marked with asterisks in the current segment of the context
+            s_start, s_end = sentence_span             # span of a context segment (i.e., a sentence span)
+            for m_span in char_mention_spans:   #  compare a fragment of the phrase with all fragments of the mentions
                 overlap_span = intersect_spans(sentence_span, m_span)
                 if (overlap_span):
-                    overlap_span = [v - s_start for v in overlap_span] #нормализуем отрезок: полагаем, что ноль - это начало куска фразы
-                    marking_spans.append(overlap_span) #уже нормализованные спаны которые надо заключить в **
-            #наконец передаём кусок контекста (в текстовом виде) и пронормированные спаны для звёзд в функцию:
+                    overlap_span = [v - s_start for v in overlap_span] # normalize the interval: we assume, that zero - is the begening of the phrase segment
+                    marking_spans.append(overlap_span) # already normalized spans that need to be enclosed in **
+            #finally, we pass the context segment (in text form) and the normalized spans for the asterisks to the function:
             part = mark_text_with_asterisks(doc_annotations["text"][s_start:s_end], marking_spans)
             processed_context.append(part)
         processed_context = ' '.join(processed_context)
@@ -876,7 +710,7 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
             {
                 "role": "user",
                 "content":
-                    template_messages[1]["content"].format( # для обычного промпта без прикреплённого пдф
+                    template_messages[1]["content"].format( # for a standard prompt without an attached PDF
                     character = char,
                     context_text = processed_context,
                     phrase_text = processed_phrase,
@@ -890,14 +724,6 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
         
         while attempt < MAX_RETRIES:
             try:     
-                #sending the prompt to the model:  
-                # response = client.beta.chat.completions.parse(
-                #     #model="gpt-5-mini", # TODO: check the name of the model
-                #     model = "gpt-5.2",
-                #     messages = complete_msg,
-                #     response_format = AgentiveResponse
-                # )
-                
                 response = llm.chat(
                     [complete_msg],
                     sampling_params
@@ -920,11 +746,10 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
         
         if cleaned_response == None:
             print(f'[X] Cleaned response is NONE')  
-        #TODO: сделать проверку на соответствие лейбла одному из допустимых значений.
         else:
             label = cleaned_response["prediction"]
             all_phrase_labels[label]["predicted"].append(char)
-#------------------------------- цикл кончился---------------------------------   
+#------------------------------- the end of the loop ---------------------------------   
     
     binarized_all_phrase_labels = {
         category: {
@@ -934,7 +759,7 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
         for category, inner_dict in all_phrase_labels.items()
     }
         
-    #----------------------Логированипе в джейсон файлы------------------------
+    #----------------------Logging into json files ------------------------
     log_entry = {
         'idx': instance['idx'],
         'doc_title': instance['doc_title'],
@@ -945,40 +770,13 @@ Heuristic: if the text suggests that the character could stop or interrupt the a
         'binarized_labels_data': binarized_all_phrase_labels
     }
     
-    json.dump(log_entry, pretty_log_file, ensure_ascii = False, indent = 4) # Логированипе в красивый json файл для ручного просмотра:
+    json.dump(log_entry, pretty_log_file, ensure_ascii = False, indent = 4) # logging into pretty json file for manual review
     
-    json.dump(log_entry, machine_log_file, ensure_ascii = False)  # Логированипе в jsonlines файл для дальнейшего автоматического разбора 
-    machine_log_file.write("\n") # обязательно добавлять \n чтобы соблюсти правила jsonlines!
+    json.dump(log_entry, machine_log_file, ensure_ascii = False)  # Logging into jsonlines file for further automated review 
+    machine_log_file.write("\n") # it`s important to add \n due to the jsonlines format!
     print(f'[TEXT]: {instance["doc_title"]}, [ID]: {instance["idx"]}')
     
-    
-    # #------------------Логирование в текстовый файл более подробно:------------
-    # text_log_file.write("=" * 80 + "\n")
-    # text_log_file.write(f"[ID]     {instance['idx']}\n")
-    # #text_log_file.write(f"[PHRASE SPANS]        {instance['phrase_spans']}\n")
-    # text_log_file.write(f"[PHRASE TEXT]        {processed_phrase}\n")
-    # #text_log_file.write(f"[CONTEXT SPANS]        {instance['context_spans']}\n")
-    # text_log_file.write(f"[CONTEXT TEXT]        {processed_context}\n")
-    # text_log_file.write(f"[GOLD LABEL]    {golden_label}\n")
-    # text_log_file.write(f"[PREDICTION]    {cleaned_response['prediction']}\n")
-    # text_log_file.write(f"[EXPLANATION]    {cleaned_response['explanation']}\n")
-    # text_log_file.write("\n")
-    
-    # text_log_file.write("[PROMPT]\n")
-    # text_log_file.write("-" * 80 + "\n")
-    # text_log_file.write(complete_msg[1]['content'] + "\n")
-    # text_log_file.write("-" * 80 + "\n\n")
-    
-    # #text_log_file.write("[EXPLANATION]\n")
-    # #text_log_file.write(cleaned_response["explanation"] + "\n")
-    # text_log_file.write("=" * 80 + "\n\n")
-    
     return True
-
-
-        
-
-    
 
 
 
@@ -1024,10 +822,6 @@ def log_statistics(log_file_path):
     
     true_named = Counter({reverse_label_map[k]: v for k, v in Counter(y_true).items()})
     pred_named = Counter({reverse_label_map[k]: v for k, v in Counter(y_pred).items()})
-    # print("True label distribution:", Counter(y_true))
-    # print("Predicted label distribution:", Counter(y_pred))
-    # print("True label distribution:", true_named)
-    # print("Predicted label distribution:", pred_named)
     ordered_labels = ['passive', 'agentive', 'low_agentive']
     
     print("True label distribution:")
@@ -1041,12 +835,12 @@ def log_statistics(log_file_path):
     
     y_true_counter = Counter([entry["golden_label"] for entry in logs])
     y_pred_counter = Counter([entry["prediction"] for entry in logs])
-    # Упорядочим по меткам
+    # sorting by labels:
     labels = ["passive", "low_agentive", "agentive"]
     y_true_total = [y_true_counter[label] for label in labels]
     y_pred_total = [y_pred_counter[label] for label in labels]
     
-    # Построим графики
+    # Plots:
     x = range(len(labels))
     width = 0.35
     
@@ -1056,7 +850,7 @@ def log_statistics(log_file_path):
     ax.set_ylabel("Count")
     ax.set_title("Label Distributions: Golden vs Predicted")
     ax.set_xticks([i + width / 2 for i in x])
-    ax.set_xticklabels(labels)  # это задаёт подписи по оси X
+    ax.set_xticklabels(labels)  # labels by the X axis
     ax.legend()
     plt.tight_layout()
     plt.show()
@@ -1064,7 +858,7 @@ def log_statistics(log_file_path):
     
     #+++++++scikit-learn metrics:++++++++
     print("\n+++++++scikit-learn metrics:+++++++\n")
-    labels = [0, 1, 2]  # явный порядок меток (рекомендуется)
+    labels = [0, 1, 2]  # explicit label order (recommended)
     # 1) Accuracy (percentage of the correct ones)
     acc = accuracy_score(y_true, y_pred)    
     print(f'Accuracy: {acc}')
@@ -1080,14 +874,14 @@ def log_statistics(log_file_path):
 
 
 
-# постпроцессим список чаров, которые вернула модель: убираем пробелы, оставляем только строки, убираем дубли..
+# post-process the list of characters returned by the model: removing spaces, keeping only strings, and removing duplicates...
 def normalize_char_list(char_list):
     result_set = set()
     for char in char_list:
-        if isinstance(char, str):   # берём только строки
-            name = char.strip().lower()     # убираем пробелы по бокам и к нижнему регистру приводим
-            if name:                    # только непустые рассматриваем!
-                result_set.add(name) # добавляем в наш итоговый сэт
+        if isinstance(char, str):   # taking only strings
+            name = char.strip().lower()     # remove leading and trailing spaces and convert to lowercase
+            if name:                    # consider only non-empty ones!
+                result_set.add(name) # adding to our final set
     
     return result_set
 
@@ -1124,7 +918,7 @@ def calc_metrics(log_file_name, mode):
         y_true = []
         y_pred = []
         for obj in logs:
-            golden_label = obj["golden_label"] # может несколько лейблов у перса быть в рамках одной фразы, хотя и маловероятно
+            golden_label = obj["golden_label"] # character could have multiple labels within a single phrase, though it's unlikely
             predicted_label = obj["predicted_label"]
             y_true.append(label_map[golden_label])
             y_pred.append(label_map[predicted_label])
@@ -1161,14 +955,14 @@ def calc_metrics(log_file_name, mode):
         ax.set_ylabel("Count")
         ax.set_title("Label Distributions: Golden vs Predicted")
         ax.set_xticks([i + width / 2 for i in x])
-        ax.set_xticklabels(labels)  # это задаёт подписи по оси X
+        ax.set_xticklabels(labels)  # labels by the X axis
         ax.legend()
         plt.tight_layout()
         plt.show()
         
         #+++++++scikit-learn metrics:++++++++
         print("\n+++++++scikit-learn metrics:+++++++\n")
-        labels = [0, 1, 2]  # явный порядок меток (рекомендуется)
+        labels = [0, 1, 2]  # explicit label order (recommended)
         # 1) Accuracy (percentage of the correct ones)
         acc = accuracy_score(y_true, y_pred)    
         print(f'Accuracy: {acc}')
@@ -1205,7 +999,7 @@ def init_logs():
     
     
     
-def do_char_list_prompting(prompt_data): # в параметры передать контекст_энд_чарс
+def do_char_list_prompting(prompt_data):
 
     succesful_prompts = 0 # succesful prompts
     failed_prompts = 0 # failed prompts 
@@ -1279,17 +1073,8 @@ def main():
         full_annotations = combining_annotations_by_authors(data)
         title = full_annotations['title']
         doc_store[title] = full_annotations
-        
-    
-    
-    # num_file = 1
-    # total_cur_errors = 0 
-    # total_cur_char_list_prompts = 0 
-    # total_cur_labels_prompts = 0
-    # total_failed_prompts = 0
-    # total_data_instances = 0 # total number of data objects for prompts, not equal to total prompts
-    
-    init_logs() # зачищаем старые файлы, которые через режим "а" дописываются у нас 
+
+    init_logs() # clean up old files that are being appended to via "a" mode
     
     prompt_data = prepare_prompt_data()  # getting prepared info for prompts for N participation objects
     char_list_answers = do_char_list_prompting(prompt_data)
@@ -1299,49 +1084,8 @@ def main():
     log_path_participants = os.path.join(CHAR_LISTS_LOG_DIR, machine_log_name)
     log_path_labels = os.path.join(LABELS_LOG_DIR, machine_log_name)
     
-    # char_list_answers = []
-    # with open(log_path_participants, 'r', encoding='UTF-8') as f:
-    #     for line in f:
-    #         obj = json.loads(line)
-    #         log_entry = {
-    #             'idx': obj['idx'],
-    #             'doc_title': obj['doc_title'],
-    #             'phrase_spans': obj['phrase_spans'],
-    #             'phrase_text': obj['phrase_text'],
-    #             'context_spans': obj['context_spans'],
-    #             'context_text': obj['context_text'],
-    #             'all_text_chars': obj['all_text_chars'],
-    #             'gold_char_list': obj['gold_char_list'],
-    #             "golden_labels_with_chars": obj["golden_labels_with_chars"],
-    #             'predicted_char_list': obj["predicted_char_list"],    
-    #         }
-    #         char_list_answers.append(log_entry)
-    
-    
-    
+
     do_label_prompting(char_list_answers, doc_store)
-          
 
-    # print("\n\n +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++:")
-    # print("  TOTAL:")
-    # print(f'  [CHAR LISTS] Total prompts: {total_cur_char_list_prompts}')
-    # print(f'  [LABELS] Total prompts: {total_cur_labels_prompts}')
-    # print(f'  [ALL] Total failed prompts {total_failed_prompts} \n\n')
-    
-
-    
-    #calc_metrics(log_path_participants, 'participants')
-    #calc_metrics(log_path_labels, 'labels')
-   
-
-
-
-
-    
+  
 main()
-
-# data = json.load(open("Full_file.json"))
-# text = data["text"]
-# start = int(input("Enter start of span: "))
-# end = int(input("Enter end of span: "))
-# print(text[start:end])
